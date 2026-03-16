@@ -2,150 +2,302 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>Binance RSI 计算器</title>
+    <title>Binance RSI 获取器 (Dark Pro)</title>
     <style>
-        body { font-family: sans-serif; margin: 20px; background: #f4f4f4; }
-        .container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        .input-group { margin-bottom: 15px; display: flex; flex-wrap: wrap; gap: 10px; }
-        input, select { padding: 8px; border: 1px solid #ddd; border-radius: 4px; }
-        button { padding: 10px 20px; background: #f0b90b; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        /* 暗色主题全局样式 */
+        body { 
+            font-family: 'Segoe UI', Roboto, sans-serif; 
+            margin: 20px; 
+            background: #181A20; /* 接近 Binance 暗色背景 */
+            color: #EAECEF; 
+        }
+        .container { 
+            background: #2B3139; 
+            padding: 25px; 
+            border-radius: 12px; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3); 
+        }
+        h2 { border-bottom: 2px solid #f0b90b; padding-bottom: 10px; }
+        
+        .input-group { margin-bottom: 20px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+        
+        /* 输入框和下拉框样式 */
+        input, select { 
+            padding: 10px 14px; 
+            background: #1e2329; 
+            border: 1px solid #474D57; 
+            border-radius: 6px; 
+            color: #EAECEF; 
+            font-size: 15px;
+        }
+        input:focus, select:focus { border-color: #f0b90b; outline: none; }
+        
+        /* 按钮样式 */
+        button { 
+            padding: 12px 24px; 
+            background: #f0b90b; 
+            border: none; 
+            border-radius: 6px; 
+            cursor: pointer; 
+            font-weight: bold; 
+            font-size: 15px;
+            transition: background 0.2s; 
+        }
         button:hover { background: #d9a508; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 14px; }
-        th, td { border: 1px solid #eee; padding: 10px; text-align: left; }
-        th { background: #fafafa; }
-        .up { color: #0ecb81; }
-        .down { color: #f6465d; }
+        
+        /* 表格通用样式 */
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 14px; table-layout: fixed; }
+        th, td { border: 1px solid #474D57; padding: 12px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        th { background: #22272e; color: #848E9C; cursor: pointer; }
+        th:hover { background: #2B3139; }
+        tr:nth-child(even) { background: #1e2329; }
+        tr:hover { background: #2B3139; }
+
+        /* OHLC 颜色自定义 */
+        .col-h { color: #0ecb81; font-weight: 500; } /* Highest 青 */
+        .col-l { color: #f6465d; font-weight: 500; } /* Lowest 红 */
+        
+        /* 结果显示区和详情面板 */
+        #resultTable { display:none; }
+        #detailPanel { margin-top: 30px; display: none; background: #2B3139; border: 1px solid #f0b90b; border-radius: 8px; padding: 20px; }
+        #stepsLog { 
+            background: #1e2329; 
+            border-radius: 4px; 
+            padding: 15px; 
+            height: 400px; 
+            overflow-y: scroll; 
+            font-family: 'Consolas', 'Monaco', monospace; 
+            font-size: 13px; 
+            color: #C1C6CD; 
+            line-height: 1.6; 
+        }
+        .step-entry { border-bottom: 1px solid #363d47; padding: 8px 0; }
+        .current-log { background: #3c2f01; font-weight: bold; color: #f0b90b; }
+        .code { color: #f0b90b; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>Binance 期货 RSI 获取器</h2>
+    <h2>Binance RSI 获取器 (Dark Pro)</h2>
     <div class="input-group">
-        <input type="text" id="symbol" placeholder="Symbol (如 BTCUSDT)" value="BTCUSDT">
+        <input type="text" id="symbol" placeholder="Symbol (如 AAVEUSDT)" value="AAVEUSDT">
         <select id="interval">
-            <option value="1m">1m</option>
-            <option value="5m">5m</option>
-            <option value="15m" selected>15m</option>
-            <option value="1h">1h</option>
-            <option value="4h">4h</option>
-            <option value="1d">1d</option>
+            <option value="1m">1m</option><option value="5m">5m</option><option value="15m">15m</option>
+            <option value="1h" selected>1h</option><option value="4h">4h</option><option value="1d">1d</option>
         </select>
-        <input type="number" id="limit" placeholder="显示K线数量" value="50">
-        <button onclick="fetchData()">生成 RSI</button>
+        <input type="number" id="limit" placeholder="显示K线数量" value="10">
+        <button onclick="fetchData()" id="fetchBtn">生成 RSI</button>
     </div>
 
     <div id="status"></div>
-    <table id="resultTable" style="display:none;">
+    
+    <table id="resultTable">
         <thead>
             <tr>
-                <th>时间 (Local)</th>
+                <th style="width: 25%">时间 (Local)</th>
                 <th>开盘</th>
-                <th>最高</th>
-                <th>最低</th>
+                <th class="col-h">最高(H)</th>
+                <th class="col-l">最低(L)</th>
                 <th>收盘</th>
-                <th>RSI (14)</th>
+                <th style="color:#2196F3">RSI(14) (点击查看计算过程)</th>
             </tr>
         </thead>
         <tbody id="tableBody"></tbody>
     </table>
+
+    <div id="detailPanel">
+        <h3>📊 周期计算过程拆解</h3>
+        <p id="detailPeriod"></p>
+        <div id="stepsLog">点击表格中的 RSI 数值，此处将显示完整的 Wilder's 平滑计算过程。</div>
+    </div>
 </div>
 
 <script>
-async function fetchData() {
-    const symbol = document.getElementById('symbol').value.toUpperCase();
-    const interval = document.getElementById('interval').value;
-    const limit = parseInt(document.getElementById('limit').value);
-    const status = document.getElementById('status');
-    const table = document.getElementById('resultTable');
-    const tbody = document.getElementById('tableBody');
+    // 全局变量用于存储计算细节
+    let calculationHistory = [];
+    const MAX_PRECISION = 6; // 计算过程中保留的小数位数
 
-    status.innerText = "正在获取数据并计算 (含回溯平滑)...";
-    tbody.innerHTML = "";
-
-    // 为了精准 RSI，我们需要额外抓取 200 根数据作为缓冲区
-    const fetchLimit = limit + 200;
-    const url = `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${fetchLimit}`;
-
-    try {
-        const response = await fetch(url);
-        const data = await response.json();
-
-        if (data.code) throw new Error(data.msg);
-
-        const rsiValues = calculateRSI(data.map(d => parseFloat(d[4])), 14);
+    async function fetchData() {
+        const symbol = document.getElementById('symbol').value.toUpperCase();
+        const interval = document.getElementById('interval').value;
+        const limit = parseInt(document.getElementById('limit').value);
+        const fetchBtn = document.getElementById('fetchBtn');
+        const status = document.getElementById('status');
         
-        // 只截取最后用户要求的数量
-        const displayData = data.slice(-limit);
-        const displayRSI = rsiValues.slice(-limit);
+        fetchBtn.disabled = true;
+        fetchBtn.innerText = "数据获取中...";
+        status.innerText = `正在处理...`;
+        
+        // 1. 数据准备：重置计算历史和表格
+        calculationHistory = [];
+        document.getElementById('resultTable').style.display = "none";
+        document.getElementById('tableBody').innerHTML = "";
+        document.getElementById('detailPanel').style.display = "none";
 
-        displayData.forEach((k, i) => {
-            const row = `<tr>
-                <td>${new Date(k[0]).toLocaleString()}</td>
-                <td>${k[1]}</td>
-                <td>${k[2]}</td>
-                <td>${k[3]}</td>
-                <td>${k[4]}</td>
-                <td style="font-weight:bold; color:#2196F3">${displayRSI[i] !== null ? displayRSI[i].toFixed(2) : '计算中'}</td>
-            </tr>`;
-            tbody.innerHTML += row;
-        });
+        // 为了平滑精准，额外抓取 200 根。
+        const lookbackBuffer = 200;
+        const totalNeeded = limit + lookbackBuffer;
+        const url = `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${totalNeeded}`;
 
-        table.style.display = "table";
-        status.innerText = `完成！已基于 ${fetchLimit} 根 K 线完成 Wilder's 平滑计算。`;
-    } catch (e) {
-        status.innerText = "错误: " + e.message;
-    }
-}
-
-// 采用 Wilder's Smoothing 算法 (Binance 标准)
-function calculateRSI(closes, period = 14) {
-    let rsi = new Array(closes.length).fill(null);
-    let gains = 0, losses = 0;
-
-    for (let i = 1; i < closes.length; i++) {
-        let diff = closes[i] - closes[i - 1];
-        let changeG = diff > 0 ? diff : 0;
-        let changeL = diff < 0 ? -diff : 0;
-
-        if (i <= period) {
-            gains += changeG;
-            losses += changeL;
-            if (i === period) {
-                let avgG = gains / period;
-                let avgL = losses / period;
-                rsi[i] = 100 - (100 / (1 + avgG / avgL));
+        try {
+            const response = await fetch(url);
+            if (!response.ok) throw new Error("API 请求失败");
+            const data = await response.json();
+            
+            // 数据检查
+            if (!data || data.length < totalNeeded) {
+                status.innerText = `警告：抓取的数据只有 ${data?.length || 0} 根，无法达到您要求的平滑精准度。建议减少显示数量或更换高频周期。`;
+                return;
             }
-        } else {
-            // Wilder's 平滑递归公式
-            let lastAvgG = (rsi[i - 1] === null) ? (gains / period) : ( ( (100 - rsi[i-1]) !== 0 ? ( (100/(100-rsi[i-1]) - 1) ) : 1) ); // 此处简化处理
-            // 标准 Wilder 算法实现
-            let prevRSI = rsi[i-1];
-            // 重新获取上一期的平均涨跌
-            // 这里为了最精准，直接在循环中维护 avgG 和 avgL
+
+            // 2. 核心计算：执行 Wilder RSI 并记录所有中间步骤
+            const rsiResults = calculateRSIWithSteps(data, 14, totalNeeded);
+            
+            // 3. 数据截取和展示
+            const displayData = data.slice(-limit);
+            const displayRSI = rsiResults.slice(-limit);
+
+            const tbody = document.getElementById('tableBody');
+            displayData.forEach((k, i) => {
+                const globalIndex = totalNeeded - limit + i;
+                const row = `<tr>
+                    <td>${new Date(k[0]).toLocaleString()}</td>
+                    <td>${k[1]}</td>
+                    <td class="col-h">${k[2]}</td>
+                    <td class="col-l">${k[3]}</td>
+                    <td>${k[4]}</td>
+                    <td style="font-weight:bold; color:#2196F3; cursor:pointer;" onclick="showCalculationDetail(${globalIndex})">${displayRSI[i] !== null ? displayRSI[i].toFixed(2) : '-'}</td>
+                </tr>`;
+                tbody.innerHTML += row;
+            });
+
+            document.getElementById('resultTable').style.display = "table";
+            status.innerHTML = `✅ 完成！已基于 ${totalNeeded} 根 K 线（包含 ${lookbackBuffer} 根回溯平滑数据）精准算出最终数值。点击任意 RSI 数值查看详细计算过程。`;
+        } catch (e) {
+            status.innerHTML = `<span style="color:#f6465d;">错误：${e.message}</span>`;
+        } finally {
+            fetchBtn.disabled = false;
+            fetchBtn.innerText = "生成 RSI";
         }
     }
 
-    // 重新优化后的 Wilder 逻辑
-    let avgG = 0, avgL = 0;
-    for (let i = 1; i < closes.length; i++) {
-        let diff = closes[i] - closes[i-1];
-        let g = diff > 0 ? diff : 0;
-        let l = diff < 0 ? -diff : 0;
-        if (i < period) {
-            avgG += g; avgL += l;
-        } else if (i === period) {
-            avgG = (avgG + g) / period;
-            avgL = (avgL + l) / period;
-            rsi[i] = 100 - (100 / (1 + (avgG / (avgL || 1))));
-        } else {
-            avgG = (avgG * (period - 1) + g) / period;
-            avgL = (avgL * (period - 1) + l) / period;
-            rsi[i] = 100 - (100 / (1 + (avgG / (avgL || 1))));
+    // 执行计算并存储所有中间状态
+    function calculateRSIWithSteps(kdata, period, totalLimit) {
+        const closes = kdata.map(d => parseFloat(d[4]));
+        const timestamps = kdata.map(d => d[0]);
+        let rsi = new Array(totalLimit).fill(null);
+        let currentAvgGain = 0;
+        let currentAvgLoss = 0;
+
+        // 记录历史信息，用于详情显示
+        calculationHistory = [];
+
+        for (let i = 0; i < totalLimit; i++) {
+            let logEntry = {
+                id: i,
+                timeStr: new Date(timestamps[i]).toLocaleString(),
+                stepDescription: ""
+            };
+
+            if (i === 0) {
+                logEntry.stepDescription = "启动：这是回溯缓冲区的第一根 K 线，作为计算基础。";
+            } else if (i < period) {
+                logEntry.stepDescription = `步骤 ${i}: 数据收集和求和 (前 ${period} 个周期的热身)。`;
+            } else if (i === period) {
+                // 计算初始平滑值
+                let gains = 0, losses = 0;
+                for (let j = 1; j <= period; j++) {
+                    let diff = closes[j] - closes[j-1];
+                    diff > 0 ? gains += diff : losses -= diff;
+                }
+                currentAvgGain = gains / period;
+                currentAvgLoss = losses / period;
+
+                logEntry.stepDescription = `步骤 ${period} (初始值生成): 计算初始平均值。<br/>
+                <code class="code">Initial AvgGain = (${gains.toFixed(MAX_PRECISION)} / ${period}) = ${currentAvgGain.toFixed(MAX_PRECISION)}</code><br/>
+                <code class="code">Initial AvgLoss = (${losses.toFixed(MAX_PRECISION)} / ${period}) = ${currentAvgLoss.toFixed(MAX_PRECISION)}</code>`;
+                
+                // 存储计算出的初始值
+                rsi[i] = 100 - (100 / (1 + (currentAvgGain / (currentAvgLoss || 0.0001))));
+            } else {
+                // 执行 Wilder's Smoothing
+                let diff = closes[i] - closes[i-1];
+                let todayG = diff > 0 ? diff : 0;
+                let todayL = diff < 0 ? -diff : 0;
+                
+                let prevAvgGain = currentAvgGain;
+                let prevAvgLoss = currentAvgLoss;
+
+                currentAvgGain = (prevAvgGain * (period - 1) + todayG) / period;
+                currentAvgLoss = (prevAvgLoss * (period - 1) + todayL) / period;
+
+                logEntry.stepDescription = `步骤 ${i} (Wilder's 平滑计算): 应用递归公式。<br/>
+                <code class="code">New AvgGain = [(${prevAvgGain.toFixed(MAX_PRECISION)} * 13) + ${todayG.toFixed(MAX_PRECISION)}] / 14 = ${currentAvgGain.toFixed(MAX_PRECISION)}</code><br/>
+                <code class="code">New AvgLoss = [(${prevAvgLoss.toFixed(MAX_PRECISION)} * 13) + ${todayL.toFixed(MAX_PRECISION)}] / 14 = ${currentAvgLoss.toFixed(MAX_PRECISION)}</code><br/>
+                <code class="code">RS = (${currentAvgGain.toFixed(MAX_PRECISION)} / ${currentAvgLoss.toFixed(MAX_PRECISION)})</code>`;
+
+                rsi[i] = 100 - (100 / (1 + (currentAvgGain / (currentAvgLoss || 0.0001))));
+            }
+            
+            // 存储最终算出的数值信息
+            if (rsi[i] !== null) {
+                logEntry.finalValues = {
+                    closes: closes.slice(Math.max(0, i-period+1), i+1).map(c => c.toFixed(2)).join(', '),
+                    rs: (currentAvgLoss !== 0 ? (currentAvgGain / currentAvgLoss) : 'INF').toFixed(MAX_PRECISION),
+                    finalRSI: rsi[i].toFixed(2)
+                };
+            }
+            calculationHistory.push(logEntry);
         }
+        return rsi;
     }
-    return rsi;
-}
+
+    // 在详情面板展示特定周期的计算全过程
+    function showCalculationDetail(index) {
+        if (calculationHistory[index] === undefined) return;
+        const entry = calculationHistory[index];
+
+        document.getElementById('detailPeriod').innerText = `正在查看 ${entry.timeStr} 的计算。这根 K 线在本次请求的 210 根缓冲区中位于索引 ${index}。`;
+        
+        const logContent = document.getElementById('stepsLog');
+        logContent.innerHTML = "";
+
+        // 1. 先展示这根 K 线本身的具体计算细节
+        let thisStepHtml = `<div class="step-entry current-log">`;
+        thisStepHtml += `⚡ 最终计算结果：<br/>`;
+        if (entry.finalValues) {
+            thisStepHtml += `<span style="color:#C1C6CD;">收盘价数据池 (${entry.id+1} 根缓冲区): [ ..., ${entry.finalValues.closes} ]</span><br/>`;
+            thisStepHtml += `<code class="code">${entry.stepDescription}</code><br/>`;
+            thisStepHtml += `<span style="color:#2196F3">最终 RSI(14) = 100 - (100 / (1 + ${entry.finalValues.rs})) = ${entry.finalValues.finalRSI}</span>`;
+        } else {
+            thisStepHtml += `计算中 (数据量尚不充足，热身中)...`;
+        }
+        thisStepHtml += `</div>`;
+        
+        // 2. 然后展示导致这根 K 线结果的所有历史步骤
+        logContent.innerHTML = thisStepHtml;
+        logContent.innerHTML += `<h3>⏳ 计算溯源：这个数值如何随时间平滑而来</h3>`;
+        
+        // 倒序展示，把最近的放在前面，方便查看
+        for (let i = index; i >= 0; i--) {
+            const hEntry = calculationHistory[i];
+            let histHtml = `<div class="step-entry">`;
+            histHtml += `<span style="color:#848E9C;">(${hEntry.timeStr})</span><br/>`;
+            histHtml += `<span style="color:#f0b90b;"> ${i < 14 ? '收集数据' : (i === 14 ? '初始值' : '平滑递进')} -> </span> `;
+            histHtml += `<span style="color:#C1C6CD;">${hEntry.stepDescription}</span><br/>`;
+            if (hEntry.finalValues) {
+                histHtml += `<span style="color:#848E9C">阶段 RSI = ${hEntry.finalValues.finalRSI}</span>`;
+            }
+            histHtml += `</div>`;
+            logContent.innerHTML += histHtml;
+        }
+
+        document.getElementById('detailPanel').style.display = "block";
+        // 自动滚动到底部，显示最新的计算
+        logContent.scrollTop = 0; 
+    }
 </script>
+
 </body>
 </html>
