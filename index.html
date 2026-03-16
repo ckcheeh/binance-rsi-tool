@@ -2,26 +2,32 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>Binance RSI 旗舰审计工具 - 修复版</title>
+    <title>Binance RSI 旗舰审计工具 (文字版报告)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <style>
         :root { --bg: #181A20; --card: #2B3139; --yellow: #f0b90b; --text: #EAECEF; }
-        body { font-family: sans-serif; background: var(--bg); color: var(--text); padding: 20px; }
-        .container { max-width: 1000px; margin: 0 auto; background: var(--card); padding: 25px; border-radius: 12px; }
-        .controls { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); padding: 20px; }
+        .container { max-width: 1100px; margin: 0 auto; background: var(--card); padding: 25px; border-radius: 12px; }
+        .controls { display: flex; gap: 10px; margin-bottom: 20px; align-items: flex-end; }
+        .input-item { display: flex; flex-direction: column; gap: 5px; }
         input, select, button { padding: 10px; border-radius: 5px; border: 1px solid #474D57; background: #1e2329; color: white; }
         button { background: var(--yellow); color: #000; font-weight: bold; border: none; cursor: pointer; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; background: #1e2329; }
         th, td { border: 1px solid #474D57; padding: 12px; text-align: left; }
+        th { color: #848E9C; font-size: 12px; }
         .rsi-val { color: #2196F3; cursor: pointer; text-decoration: underline; font-weight: bold; }
-        
-        /* 详情面板样式 */
-        #detailPanel { margin-top: 30px; display: none; border: 1px solid var(--yellow); padding: 20px; border-radius: 8px; }
-        #stepsLog { background: #0b0e11; padding: 15px; max-height: 400px; overflow-y: auto; font-family: monospace; font-size: 13px; line-height: 1.5; }
-        .pdf-btn { background: #474D57; color: white; margin-left: 10px; }
-        
-        /* 专门给 PDF 打印用的隐藏区域（白色背景，确保清晰） */
-        #pdf-export-area { display: none; background: white; color: black; padding: 40px; }
+
+        /* 详情面板 */
+        #detailPanel { margin-top: 30px; display: none; border-top: 2px solid var(--yellow); padding-top: 20px; }
+        .panel-header { display: flex; justify-content: space-between; margin-bottom: 15px; }
+        #stepsLog { background: #0b0e11; padding: 15px; max-height: 400px; overflow-y: auto; font-family: 'Courier New', monospace; border-radius: 8px; }
+
+        /* PDF 专用导出区域（重点：使用标准表格样式，白底黑字便于复制） */
+        #pdf-export-area { display: none; font-family: "Arial", sans-serif; }
+        .pdf-table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        .pdf-table th, .pdf-table td { border: 0.5pt solid #ccc; padding: 8px; font-size: 10pt; color: black; }
+        .pdf-header { border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px; }
     </style>
 </head>
 <body>
@@ -29,14 +35,10 @@
 <div class="container">
     <h2>Binance RSI 旗舰审计工具</h2>
     <div class="controls">
-        <input type="text" id="symbol" value="AAVEUSDT">
-        <select id="interval">
-            <option value="1h" selected>1h</option>
-            <option value="4h">4h</option>
-            <option value="1d">1d</option>
-        </select>
-        <input type="number" id="limit" value="10">
-        <button onclick="fetchData()">生成报告</button>
+        <div class="input-item"><label>交易对</label><input type="text" id="symbol" value="BTCUSDT"></div>
+        <div class="input-item"><label>周期</label><select id="interval"><option value="1h">1h</option><option value="15m">15m</option></select></div>
+        <div class="input-item"><label>数量</label><input type="number" id="limit" value="10"></div>
+        <button onclick="fetchData()">开始审计计算</button>
     </div>
 
     <div id="status"></div>
@@ -44,16 +46,16 @@
     <table id="resultTable" style="display:none;">
         <thead>
             <tr>
-                <th>时间 (Local)</th><th>开盘</th><th>最高</th><th>最低</th><th>收盘</th><th>RSI(14) - 点击审计</th>
+                <th>时间 (Local)</th><th>开盘</th><th>最高</th><th>最低</th><th>收盘</th><th>RSI(14) - 点击查看过程</th>
             </tr>
         </thead>
         <tbody id="tableBody"></tbody>
     </table>
 
     <div id="detailPanel">
-        <div style="display:flex; justify-content: space-between; align-items: center;">
-            <h3 id="auditTitle">计算审计</h3>
-            <button class="pdf-btn" onclick="downloadPDF()">⬇ 下载 PDF 报告</button>
+        <div class="panel-header">
+            <h3>📊 审计报告预览</h3>
+            <button onclick="downloadPDF()" style="background:#474D57; color:white;">📥 下载 PDF 数据报告 (文字/表格)</button>
         </div>
         <div id="stepsLog"></div>
     </div>
@@ -62,7 +64,8 @@
 <div id="pdf-export-area"></div>
 
 <script>
-    let calcLogs = [];
+    let rawData = [];
+    let auditLogs = [];
     const LOOKBACK = 200;
 
     async function fetchData() {
@@ -73,40 +76,50 @@
         try {
             const res = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${limit + LOOKBACK}`);
             const data = await res.json();
+            rawData = data;
             const rsi = runRSI(data, 14);
-            render(data, rsi, limit);
-        } catch (e) { alert(e.message); }
+            renderTable(data, rsi, limit);
+            document.getElementById('status').innerText = "✅ 计算已对齐。点击蓝色 RSI 数值生成报告详情。";
+        } catch (e) { alert("API 错误: " + e.message); }
     }
 
     function runRSI(data, p) {
         let closes = data.map(d => parseFloat(d[4]));
         let rsi = new Array(data.length).fill(null);
-        calcLogs = [];
+        auditLogs = [];
         let gA = 0, lA = 0;
 
         for (let i = 0; i < data.length; i++) {
-            let log = { time: new Date(data[i][0]).toLocaleString(), close: closes[i], info: "" };
+            let change = i > 0 ? closes[i] - closes[i-1] : 0;
+            let g = Math.max(0, change), l = Math.max(0, -change);
+            let stage = "";
+
             if (i > 0) {
-                let d = closes[i] - closes[i-1];
-                let g = Math.max(0, d), l = Math.max(0, -d);
                 if (i <= p) {
                     gA += g; lA += l;
-                    if (i === p) { gA /= p; lA /= p; }
+                    if (i === p) { gA /= p; lA /= p; stage = "初始均值"; }
+                    else { stage = "热身中"; }
                 } else {
                     gA = (gA * (p-1) + g) / p;
                     lA = (lA * (p-1) + l) / p;
+                    stage = "平滑演进";
                 }
-                if (i >= p) {
-                    rsi[i] = 100 - (100 / (1 + (gA / (lA || 0.0001))));
-                    log.info = `AvgGain: ${gA.toFixed(6)} | AvgLoss: ${lA.toFixed(6)} | RSI: ${rsi[i].toFixed(4)}`;
-                }
+                if (i >= p) rsi[i] = 100 - (100 / (1 + (gA / (lA || 0.0001))));
             }
-            calcLogs.push(log);
+            
+            auditLogs.push({
+                time: new Date(data[i][0]).toLocaleString(),
+                close: closes[i],
+                gA: gA.toFixed(6),
+                lA: lA.toFixed(6),
+                rsi: rsi[i] ? rsi[i].toFixed(4) : "-",
+                stage: stage
+            });
         }
         return rsi;
     }
 
-    function render(data, rsi, limit) {
+    function renderTable(data, rsi, limit) {
         const tbody = document.getElementById('tableBody');
         tbody.innerHTML = "";
         data.slice(-limit).forEach((k, i) => {
@@ -114,40 +127,65 @@
             tbody.innerHTML += `<tr>
                 <td>${new Date(k[0]).toLocaleString()}</td>
                 <td>${k[1]}</td><td>${k[2]}</td><td>${k[3]}</td><td>${k[4]}</td>
-                <td><span class="rsi-val" onclick="showAudit(${idx})">${rsi[idx].toFixed(2)}</span></td>
+                <td><span class="rsi-val" onclick="prepareAudit(${idx})">${rsi[idx].toFixed(2)}</span></td>
             </tr>`;
         });
         document.getElementById('resultTable').style.display = "table";
     }
 
-    function showAudit(idx) {
+    // 准备审计数据并渲染成表格供 PDF 使用
+    function prepareAudit(idx) {
+        const target = auditLogs[idx];
         const logBox = document.getElementById('stepsLog');
-        const exportArea = document.getElementById('pdf-export-area');
-        let html = `<strong>审计点: ${calcLogs[idx].time} | 最终值: ${calcLogs[idx].info}</strong><hr>`;
+        const pdfArea = document.getElementById('pdf-export-area');
+
+        // 1. 网页预览
+        logBox.innerHTML = `正在分析: ${target.time} | 目标 RSI: ${target.rsi}<br>数据已同步至导出区，点击下载。`;
+
+        // 2. 构建 PDF 表格 (文字流模式)
+        let html = `
+            <div class="pdf-header">
+                <h1 style="margin:0">RSI 审计报告 - ${document.getElementById('symbol').value}</h1>
+                <p>生成时间: ${new Date().toLocaleString()} | 审计时间点: ${target.time}</p>
+            </div>
+            <h3>一、 目标数值摘要</h3>
+            <table class="pdf-table">
+                <tr style="background:#eee"><th>时间点</th><th>收盘价</th><th>平均上涨(AvgG)</th><th>平均下跌(AvgL)</th><th>最终 RSI</th></tr>
+                <tr><td>${target.time}</td><td>${target.close}</td><td>${target.gA}</td><td>${target.lA}</td><td><b>${target.rsi}</b></td></tr>
+            </table>
+            
+            <h3>二、 平滑演进轨迹 (最近 20 步)</h3>
+            <table class="pdf-table">
+                <tr style="background:#eee">
+                    <th>时间</th><th>收盘价</th><th>Avg Gain</th><th>Avg Loss</th><th>RSI 过程值</th>
+                </tr>`;
         
-        // 追溯 30 步
-        for (let i = idx; i >= Math.max(0, idx - 30); i--) {
-            html += `<div style="margin-bottom:8px;">[${calcLogs[i].time}] - ${calcLogs[i].info || "初始化"}</div>`;
+        for (let i = idx; i >= Math.max(0, idx - 20); i--) {
+            const log = auditLogs[i];
+            html += `<tr>
+                <td>${log.time}</td><td>${log.close}</td><td>${log.gA}</td><td>${log.lA}</td><td>${log.rsi}</td>
+            </tr>`;
         }
+        html += `</table>`;
         
-        logBox.innerHTML = html;
-        exportArea.innerHTML = `<h1>RSI 审计报告</h1>` + html; // 同步到 PDF 区域
+        pdfArea.innerHTML = html;
         document.getElementById('detailPanel').style.display = "block";
     }
 
     function downloadPDF() {
         const element = document.getElementById('pdf-export-area');
-        element.style.display = 'block'; // 临时显示用于抓取
+        element.style.display = 'block';
         
         const opt = {
-            margin: 15,
-            filename: `RSI_Report_${document.getElementById('symbol').value}.pdf`,
-            html2canvas: { scale: 2 },
+            margin: 10,
+            filename: `RSI_Audit_Report.pdf`,
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: { scale: 2, logging: false, useCORS: true },
             jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
         };
 
         html2pdf().set(opt).from(element).save().then(() => {
-            element.style.display = 'none'; // 抓取完后重新隐藏
+            element.style.display = 'none';
         });
     }
 </script>
