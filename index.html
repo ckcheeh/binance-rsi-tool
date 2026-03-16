@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>Binance RSI 计算器</title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; background: #f4f4f4; }
+        .container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .input-group { margin-bottom: 15px; display: flex; flex-wrap: wrap; gap: 10px; }
+        input, select { padding: 8px; border: 1px solid #ddd; border-radius: 4px; }
+        button { padding: 10px 20px; background: #f0b90b; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        button:hover { background: #d9a508; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 14px; }
+        th, td { border: 1px solid #eee; padding: 10px; text-align: left; }
+        th { background: #fafafa; }
+        .up { color: #0ecb81; }
+        .down { color: #f6465d; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Binance 期货 RSI 获取器</h2>
+    <div class="input-group">
+        <input type="text" id="symbol" placeholder="Symbol (如 BTCUSDT)" value="BTCUSDT">
+        <select id="interval">
+            <option value="1m">1m</option>
+            <option value="5m">5m</option>
+            <option value="15m" selected>15m</option>
+            <option value="1h">1h</option>
+            <option value="4h">4h</option>
+            <option value="1d">1d</option>
+        </select>
+        <input type="number" id="limit" placeholder="显示K线数量" value="50">
+        <button onclick="fetchData()">生成 RSI</button>
+    </div>
+
+    <div id="status"></div>
+    <table id="resultTable" style="display:none;">
+        <thead>
+            <tr>
+                <th>时间 (Local)</th>
+                <th>开盘</th>
+                <th>最高</th>
+                <th>最低</th>
+                <th>收盘</th>
+                <th>RSI (14)</th>
+            </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+    </table>
+</div>
+
+<script>
+async function fetchData() {
+    const symbol = document.getElementById('symbol').value.toUpperCase();
+    const interval = document.getElementById('interval').value;
+    const limit = parseInt(document.getElementById('limit').value);
+    const status = document.getElementById('status');
+    const table = document.getElementById('resultTable');
+    const tbody = document.getElementById('tableBody');
+
+    status.innerText = "正在获取数据并计算 (含回溯平滑)...";
+    tbody.innerHTML = "";
+
+    // 为了精准 RSI，我们需要额外抓取 200 根数据作为缓冲区
+    const fetchLimit = limit + 200;
+    const url = `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${fetchLimit}`;
+
+    try {
+        const response = await fetch(url);
+        const data = await response.json();
+
+        if (data.code) throw new Error(data.msg);
+
+        const rsiValues = calculateRSI(data.map(d => parseFloat(d[4])), 14);
+        
+        // 只截取最后用户要求的数量
+        const displayData = data.slice(-limit);
+        const displayRSI = rsiValues.slice(-limit);
+
+        displayData.forEach((k, i) => {
+            const row = `<tr>
+                <td>${new Date(k[0]).toLocaleString()}</td>
+                <td>${k[1]}</td>
+                <td>${k[2]}</td>
+                <td>${k[3]}</td>
+                <td>${k[4]}</td>
+                <td style="font-weight:bold; color:#2196F3">${displayRSI[i] !== null ? displayRSI[i].toFixed(2) : '计算中'}</td>
+            </tr>`;
+            tbody.innerHTML += row;
+        });
+
+        table.style.display = "table";
+        status.innerText = `完成！已基于 ${fetchLimit} 根 K 线完成 Wilder's 平滑计算。`;
+    } catch (e) {
+        status.innerText = "错误: " + e.message;
+    }
+}
+
+// 采用 Wilder's Smoothing 算法 (Binance 标准)
+function calculateRSI(closes, period = 14) {
+    let rsi = new Array(closes.length).fill(null);
+    let gains = 0, losses = 0;
+
+    for (let i = 1; i < closes.length; i++) {
+        let diff = closes[i] - closes[i - 1];
+        let changeG = diff > 0 ? diff : 0;
+        let changeL = diff < 0 ? -diff : 0;
+
+        if (i <= period) {
+            gains += changeG;
+            losses += changeL;
+            if (i === period) {
+                let avgG = gains / period;
+                let avgL = losses / period;
+                rsi[i] = 100 - (100 / (1 + avgG / avgL));
+            }
+        } else {
+            // Wilder's 平滑递归公式
+            let lastAvgG = (rsi[i - 1] === null) ? (gains / period) : ( ( (100 - rsi[i-1]) !== 0 ? ( (100/(100-rsi[i-1]) - 1) ) : 1) ); // 此处简化处理
+            // 标准 Wilder 算法实现
+            let prevRSI = rsi[i-1];
+            // 重新获取上一期的平均涨跌
+            // 这里为了最精准，直接在循环中维护 avgG 和 avgL
+        }
+    }
+
+    // 重新优化后的 Wilder 逻辑
+    let avgG = 0, avgL = 0;
+    for (let i = 1; i < closes.length; i++) {
+        let diff = closes[i] - closes[i-1];
+        let g = diff > 0 ? diff : 0;
+        let l = diff < 0 ? -diff : 0;
+        if (i < period) {
+            avgG += g; avgL += l;
+        } else if (i === period) {
+            avgG = (avgG + g) / period;
+            avgL = (avgL + l) / period;
+            rsi[i] = 100 - (100 / (1 + (avgG / (avgL || 1))));
+        } else {
+            avgG = (avgG * (period - 1) + g) / period;
+            avgL = (avgL * (period - 1) + l) / period;
+            rsi[i] = 100 - (100 / (1 + (avgG / (avgL || 1))));
+        }
+    }
+    return rsi;
+}
+</script>
+</body>
+</html>
